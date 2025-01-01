@@ -36,4 +36,4 @@ EXPOSE 3000
 
 # Command to run the application
 ENTRYPOINT [ "npm" ]
-CMD ["run", "start:prod"]
+CMD ["run", "start"]

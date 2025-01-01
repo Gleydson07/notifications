@@ -1,42 +1,106 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import * as amqp from "amqplib";
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as amqp from 'amqplib';
 
 @Injectable()
-export class RabbitmqService implements OnModuleInit {
-  constructor(private readonly configService: ConfigService) {}
+export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
+  private connection: amqp.Connection;
+  private channel: amqp.Channel;
+  private readonly url: string;
+  private readonly exchangeName: string;
+  private readonly exchangeType: string;
+  private queues: { name: string; routingKey: string, durable: boolean }[];
 
-  async onModuleInit() {
-    const RABBITMQ_URL = this.configService.get<string>("RABBITMQ_URL");
-    const EXCHANGE_NAME = this.configService.get<string>("RABBITMQ_EXCHANGE_NAME");
-    const EXCHANGE_TYPE = this.configService.get<string>("RABBITMQ_EXCHANGE_TYPE");
+  constructor(
+    private readonly configService: ConfigService
+  ) {
+    this.url = this.configService.get<string>('RABBITMQ_URL');
+    this.exchangeName = this.configService.get<string>('RABBITMQ_EXCHANGE_NAME');
+    this.exchangeType = this.configService.get<string>('RABBITMQ_EXCHANGE_TYPE');
 
-    console.log(RABBITMQ_URL)
-    const connection = await amqp.connect(RABBITMQ_URL);
-    const channel = await connection.createChannel();
-
-    await channel.assertExchange(EXCHANGE_NAME, EXCHANGE_TYPE, { durable: true });
-
-    const queues = [
+    this.queues = [
       {
-        name: this.configService.get<string>("RABBITMQ_QUEUE_AUTH_EMAIL"),
-        routingKey: this.configService.get<string>("RABBITMQ_QUEUE_AUTH_EMAIL_KEY"),
-        durable: this.configService.get<string>("RABBITMQ_QUEUE_AUTH_EMAIL_DURABLE")
+        name: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL'),
+        routingKey: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL_KEY'),
+        durable: true,
       },
       {
-        name: this.configService.get<string>("RABBITMQ_QUEUE_AUTH_SMS"),
-        routingKey: this.configService.get<string>("RABBITMQ_QUEUE_AUTH_SMS_KEY"),
-        durable: this.configService.get<string>("RABBITMQ_QUEUE_AUTH_SMS_DURABLE")
+        name: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS'),
+        routingKey: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS_KEY'),
+        durable: true,
       },
     ];
+  }
 
-    for (const queue of queues) {
-      await channel.assertQueue(queue.name, { durable: true });
-      await channel.bindQueue(queue.name, EXCHANGE_NAME, queue.routingKey);
+  async onModuleInit() {
+    await this.connectWithRetry();
+  }
+
+  async onModuleDestroy() {
+    if (this.channel) await this.channel.close();
+    if (this.connection) await this.connection.close();
+
+    console.log('Conexão com RabbitMQ encerrada.');
+  }
+
+  async connectWithRetry(retryInterval = 5000, maxRetries = 5, attempt = 0): Promise<void> {
+    try {
+      if (attempt) {
+        console.log(`Reconectando com RabbitMQ (${attempt}/${maxRetries})...`);
+      }
+
+      this.connection = await amqp.connect(this.url);
+
+      this.connection.on('error', (err) => {
+        console.error('Erro na conexão do RabbitMQ:', err.message);
+        this.reconnect(retryInterval);
+      });
+
+      this.connection.on('close', () => {
+        console.warn('Conexão com RabbitMQ fechada.');
+        this.reconnect(retryInterval);
+      });
+
+      this.channel = await this.connection.createChannel();
+
+      for (const queue of this.queues) {
+        await this.channel.assertQueue(queue.name, { durable: true });
+        await this.channel.bindQueue(queue.name, this.exchangeName, queue.routingKey);
+
+        this.channel.consume(queue.name, (message) => {
+          if (message) {
+            const content = JSON.parse(message.content.toString());
+
+            this.processMessage(queue.name, content);
+            this.channel.ack(message);
+          }
+        });
+      }
+      console.table(this.queues);
+    } catch (error) {
+      console.error(`Erro ao conectar ao RabbitMQ: ${error.message}`);
+
+      if (attempt < maxRetries) {
+        console.log(`Tentando reconectar em ${retryInterval / 1000}s...`);
+        setTimeout(() => this.connectWithRetry(retryInterval, maxRetries, attempt + 1), retryInterval);
+      } else {
+        console.error('Número máximo de tentativas de reconexão atingido. Abortando...');
+      }
     }
+  }
 
-    console.table(queues);
-    await channel.close();
-    await connection.close();
+  private async reconnect(retryInterval: number) {
+    if (this.channel) await this.channel.close().catch(() => null);
+    if (this.connection) await this.connection.close().catch(() => null);
+
+    setTimeout(() => this.connectWithRetry(retryInterval), retryInterval);
+  }
+
+  private async processMessage(queueName: string, message: any) {
+    if (queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL')) {
+      console.log(queueName, message);
+    } else if (queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS')) {
+      console.log(queueName, message);
+    }
   }
 }

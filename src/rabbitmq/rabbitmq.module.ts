@@ -1,3 +1,6 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
+
 import { Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigService } from '@nestjs/config';
@@ -13,9 +16,6 @@ import { RabbitmqService } from "./rabbitmq.service";
         transport: Transport.RMQ,
         options: {
           urls: [configService.get<string>('RABBITMQ_URL')],
-          queueOptions: {
-            durable: true,
-          },
         },
       }),
     }]),
