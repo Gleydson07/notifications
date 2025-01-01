@@ -8,6 +8,7 @@ import { SmsModule } from './sms/sms.module';
 import * as dotenv from 'dotenv';
 import * as dotenvExpand from 'dotenv-expand';
 import { RouterModule } from "@nestjs/core";
+import { AuthModule } from './auth/auth.module';
 
 const env = dotenv.config();
 dotenvExpand.expand(env);
@@ -29,7 +30,8 @@ export const prefix = 'ms-notifications/api/v1'
         path: `${prefix}/system/rabbitmq`,
         module: RabbitmqModule
       },
-    ])
+    ]),
+    AuthModule
   ],
   controllers: [AppController],
   providers: [AppService],

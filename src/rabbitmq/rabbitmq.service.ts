@@ -12,9 +12,7 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   private queues: { name: string; routingKey: string, durable: boolean }[];
   private isChannelActive = false
 
-  constructor(
-    private readonly configService: ConfigService
-  ) {
+  constructor(private readonly configService: ConfigService) {
     this.url = this.configService.get<string>('RABBITMQ_URL');
     this.exchangeName = this.configService.get<string>('RABBITMQ_EXCHANGE_NAME');
     this.exchangeType = this.configService.get<string>('RABBITMQ_EXCHANGE_TYPE');
