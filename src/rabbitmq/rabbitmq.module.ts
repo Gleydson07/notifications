@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ConfigService } from '@nestjs/config';
 import { RabbitmqService } from "./rabbitmq.service";
+import { RabbitmqController } from "./rabbitmq.controller";
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RabbitmqService } from "./rabbitmq.service";
       }),
     }]),
   ],
+  controllers: [RabbitmqController],
   providers: [RabbitmqService],
   exports: [RabbitmqService, ClientsModule],
 })

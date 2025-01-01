@@ -10,6 +10,7 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   private readonly exchangeName: string;
   private readonly exchangeType: string;
   private queues: { name: string; routingKey: string, durable: boolean }[];
+  private isChannelActive = false
 
   constructor(
     private readonly configService: ConfigService
@@ -37,6 +38,8 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    this.isChannelActive = false;
+
     if (this.channel) await this.channel.close();
     if (this.connection) await this.connection.close();
 
@@ -62,6 +65,8 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.channel = await this.connection.createChannel();
+      await this.channel.assertExchange(this.exchangeName, this.exchangeType, { durable: true });
+      this.isChannelActive = true;
 
       for (const queue of this.queues) {
         await this.channel.assertQueue(queue.name, { durable: true });
@@ -69,11 +74,25 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
 
         this.channel.consume(queue.name, (message) => {
           if (message) {
+            if (!this.isChannelActive) {
+              console.warn('Mensagem recebida, mas o canal foi encerrado. Ignorando...');
+              return;
+            }
+
             const content = JSON.parse(message.content.toString());
 
-            this.processMessage(queue.name, content);
-            this.channel.ack(message);
+            try {
+              this.processMessage(queue.name, content);
+              this.channel.ack(message);
+            } catch (error) {
+              console.error('Erro ao processar mensagem. Enviando NACK.', error.message);
+              this.channel.nack(message, false, true);
+            }
+
           }
+        }, {
+          noAck: false,
+          consumerTag: `consumer-${queue.name}`
         });
       }
       console.table(this.queues);
@@ -90,6 +109,8 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async reconnect(retryInterval: number) {
+    this.isChannelActive = false;
+
     if (this.channel) await this.channel.close().catch(() => null);
     if (this.connection) await this.connection.close().catch(() => null);
 

@@ -25,7 +25,10 @@ export const prefix = 'ms-notifications/api/v1'
     EmailModule,
     SmsModule,
     RouterModule.register([
-      { path: `${prefix}/system/rabbitmq`, module: RabbitmqModule },
+      {
+        path: `${prefix}/system/rabbitmq`,
+        module: RabbitmqModule
+      },
     ])
   ],
   controllers: [AppController],
