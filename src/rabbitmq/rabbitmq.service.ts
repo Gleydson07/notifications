@@ -8,14 +8,14 @@ export class RabbitmqService implements OnModuleInit {
 
   async onModuleInit() {
     const RABBITMQ_URL = this.configService.get<string>("RABBITMQ_URL");
-    const RABBITMQ_EXCHANGE_NAME = this.configService.get<string>("RABBITMQ_EXCHANGE_NAME");
+    const EXCHANGE_NAME = this.configService.get<string>("RABBITMQ_EXCHANGE_NAME");
     const EXCHANGE_TYPE = this.configService.get<string>("RABBITMQ_EXCHANGE_TYPE");
 
     console.log(RABBITMQ_URL)
     const connection = await amqp.connect(RABBITMQ_URL);
     const channel = await connection.createChannel();
 
-    await channel.assertExchange(RABBITMQ_EXCHANGE_NAME, EXCHANGE_TYPE, { durable: true });
+    await channel.assertExchange(EXCHANGE_NAME, EXCHANGE_TYPE, { durable: true });
 
     const queues = [
       {
@@ -32,10 +32,10 @@ export class RabbitmqService implements OnModuleInit {
 
     for (const queue of queues) {
       await channel.assertQueue(queue.name, { durable: true });
-      await channel.bindQueue(queue.name, RABBITMQ_EXCHANGE_NAME, queue.routingKey);
-      console.log(`Queue "${queue.name}" bound to exchange "${RABBITMQ_EXCHANGE_NAME}" with routing key "${queue.routingKey}".`);
+      await channel.bindQueue(queue.name, EXCHANGE_NAME, queue.routingKey);
     }
 
+    console.table(queues);
     await channel.close();
     await connection.close();
   }

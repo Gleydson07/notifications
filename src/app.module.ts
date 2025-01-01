@@ -3,14 +3,15 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from "@nestjs/config";
 import { RabbitmqModule } from "./rabbitmq/rabbitmq.module";
-
-import * as dotenv from 'dotenv';
-dotenv.config();
+import { EmailModule } from './email/email.module';
+import { SmsModule } from './sms/sms.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     RabbitmqModule,
+    EmailModule,
+    SmsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

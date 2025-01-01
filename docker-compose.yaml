@@ -10,7 +10,9 @@ services:
       - '${APP_PORT}:3000'
     volumes:
       - ./app:/app
-    # environment:
-    #   - NODE_ENV=production
     env_file:
       - .env
+
+volumes:
+  app:
+    driver: local
