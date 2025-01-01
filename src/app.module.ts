@@ -12,7 +12,7 @@ import { RouterModule } from "@nestjs/core";
 const env = dotenv.config();
 dotenvExpand.expand(env);
 
-export const prefix = 'ms-auth/api/v1'
+export const prefix = 'ms-notifications/api/v1'
 
 @Module({
   imports: [
