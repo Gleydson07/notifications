@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as amqp from 'amqplib';
+import { EmailService } from "src/email/email.service";
 
 @Injectable()
 export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
@@ -12,7 +13,10 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   private queues: { name: string; routingKey: string, durable: boolean }[];
   private isChannelActive = false
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly emailService: EmailService
+  ) {
     this.url = this.configService.get<string>('RABBITMQ_URL');
     this.exchangeName = this.configService.get<string>('RABBITMQ_EXCHANGE_NAME');
     this.exchangeType = this.configService.get<string>('RABBITMQ_EXCHANGE_TYPE');
@@ -117,7 +121,7 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
 
   private async processMessage(queueName: string, message: any) {
     if (queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL')) {
-      console.log(queueName, message);
+      this.emailService.sendEmailToRecoveryPassword(message);
     } else if (queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS')) {
       console.log(queueName, message);
     }
