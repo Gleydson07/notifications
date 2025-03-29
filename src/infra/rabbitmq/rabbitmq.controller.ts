@@ -1,6 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 import { RabbitmqService } from './rabbitmq.service';
-import { AuthGuard } from 'src/auth/guards/auth.guard';
+import { AuthGuard } from 'src/infra/auth/guards/auth.guard';
 
 @UseGuards(AuthGuard)
 @Controller()

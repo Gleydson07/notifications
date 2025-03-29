@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as amqp from 'amqplib';
-import { EmailService } from "src/email/email.service";
+import { EmailService } from 'src/app/modules/email/email.service';
 
 @Injectable()
 export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
@@ -10,26 +10,34 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   private readonly url: string;
   private readonly exchangeName: string;
   private readonly exchangeType: string;
-  private queues: { name: string; routingKey: string, durable: boolean }[];
-  private isChannelActive = false
+  private queues: { name: string; routingKey: string; durable: boolean }[];
+  private isChannelActive = false;
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
   ) {
     this.url = this.configService.get<string>('RABBITMQ_URL');
-    this.exchangeName = this.configService.get<string>('RABBITMQ_EXCHANGE_NAME');
-    this.exchangeType = this.configService.get<string>('RABBITMQ_EXCHANGE_TYPE');
+    this.exchangeName = this.configService.get<string>(
+      'RABBITMQ_EXCHANGE_NAME',
+    );
+    this.exchangeType = this.configService.get<string>(
+      'RABBITMQ_EXCHANGE_TYPE',
+    );
 
     this.queues = [
       {
         name: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL'),
-        routingKey: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL_KEY'),
+        routingKey: this.configService.get<string>(
+          'RABBITMQ_QUEUE_AUTH_EMAIL_KEY',
+        ),
         durable: true,
       },
       {
         name: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS'),
-        routingKey: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS_KEY'),
+        routingKey: this.configService.get<string>(
+          'RABBITMQ_QUEUE_AUTH_SMS_KEY',
+        ),
         durable: true,
       },
     ];
@@ -48,7 +56,11 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
     console.log('Conexão com RabbitMQ encerrada.');
   }
 
-  async connectWithRetry(retryInterval = 5000, maxRetries = 5, attempt = 0): Promise<void> {
+  async connectWithRetry(
+    retryInterval = 5000,
+    maxRetries = 5,
+    attempt = 0,
+  ): Promise<void> {
     try {
       if (attempt) {
         console.log(`Reconectando com RabbitMQ (${attempt}/${maxRetries})...`);
@@ -67,35 +79,49 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.channel = await this.connection.createChannel();
-      await this.channel.assertExchange(this.exchangeName, this.exchangeType, { durable: true });
+      await this.channel.assertExchange(this.exchangeName, this.exchangeType, {
+        durable: true,
+      });
       this.isChannelActive = true;
 
       for (const queue of this.queues) {
         await this.channel.assertQueue(queue.name, { durable: true });
-        await this.channel.bindQueue(queue.name, this.exchangeName, queue.routingKey);
+        await this.channel.bindQueue(
+          queue.name,
+          this.exchangeName,
+          queue.routingKey,
+        );
 
-        this.channel.consume(queue.name, (message) => {
-          if (message) {
-            if (!this.isChannelActive) {
-              console.warn('Mensagem recebida, mas o canal foi encerrado. Ignorando...');
-              return;
+        this.channel.consume(
+          queue.name,
+          (message) => {
+            if (message) {
+              if (!this.isChannelActive) {
+                console.warn(
+                  'Mensagem recebida, mas o canal foi encerrado. Ignorando...',
+                );
+                return;
+              }
+
+              const content = JSON.parse(message.content.toString());
+
+              try {
+                this.processMessage(queue.name, content);
+                this.channel.ack(message);
+              } catch (error) {
+                console.error(
+                  'Erro ao processar mensagem. Enviando NACK.',
+                  error.message,
+                );
+                this.channel.nack(message, false, true);
+              }
             }
-
-            const content = JSON.parse(message.content.toString());
-
-            try {
-              this.processMessage(queue.name, content);
-              this.channel.ack(message);
-            } catch (error) {
-              console.error('Erro ao processar mensagem. Enviando NACK.', error.message);
-              this.channel.nack(message, false, true);
-            }
-
-          }
-        }, {
-          noAck: false,
-          consumerTag: `consumer-${queue.name}`
-        });
+          },
+          {
+            noAck: false,
+            consumerTag: `consumer-${queue.name}`,
+          },
+        );
       }
       console.table(this.queues);
     } catch (error) {
@@ -103,9 +129,14 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
 
       if (attempt < maxRetries) {
         console.log(`Tentando reconectar em ${retryInterval / 1000}s...`);
-        setTimeout(() => this.connectWithRetry(retryInterval, maxRetries, attempt + 1), retryInterval);
+        setTimeout(
+          () => this.connectWithRetry(retryInterval, maxRetries, attempt + 1),
+          retryInterval,
+        );
       } else {
-        console.error('Número máximo de tentativas de reconexão atingido. Abortando...');
+        console.error(
+          'Número máximo de tentativas de reconexão atingido. Abortando...',
+        );
       }
     }
   }
@@ -120,9 +151,13 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async processMessage(queueName: string, message: any) {
-    if (queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL')) {
+    if (
+      queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL')
+    ) {
       this.emailService.sendEmailToRecoveryPassword(message);
-    } else if (queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS')) {
+    } else if (
+      queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS')
+    ) {
       console.log(queueName, message);
     }
   }
