@@ -154,7 +154,7 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
     if (
       queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL')
     ) {
-      this.emailService.sendEmailToRecoveryPassword(message);
+      this.emailService.sendEmailToRecoveryPassword(message.content);
     } else if (
       queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS')
     ) {

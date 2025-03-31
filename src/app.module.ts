@@ -7,6 +7,8 @@ import * as dotenv from 'dotenv';
 import * as dotenvExpand from 'dotenv-expand';
 import { RouterModule } from '@nestjs/core';
 import { AuthModule } from './infra/auth/auth.module';
+import { DatabaseModule } from './infra/database/database.module';
+import { NotificationsModule } from './app/modules/notifications/notifications.module';
 
 const env = dotenv.config();
 dotenvExpand.expand(env);
@@ -20,11 +22,17 @@ export const prefix = 'ms-notifications/api/v1';
       envFilePath: '.env',
       load: [() => env.parsed],
     }),
+    DatabaseModule,
     AuthModule,
     RabbitmqModule,
     EmailModule,
     SmsModule,
+    NotificationsModule,
     RouterModule.register([
+      {
+        path: `${prefix}/notifications`,
+        module: NotificationsModule,
+      },
       {
         path: `${prefix}/system/rabbitmq`,
         module: RabbitmqModule,
