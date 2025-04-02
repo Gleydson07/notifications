@@ -2,15 +2,14 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as amqp from 'amqplib';
 import { EmailService } from 'src/app/modules/email/email.service';
+import { exchangeList, exRecoveryPassword, exUser } from './config/channels';
+import { IExchange } from './dto/exchange.dto';
 
 @Injectable()
 export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
   private connection: amqp.Connection;
   private channel: amqp.Channel;
   private readonly url: string;
-  private readonly exchangeName: string;
-  private readonly exchangeType: string;
-  private queues: { name: string; routingKey: string; durable: boolean }[];
   private isChannelActive = false;
 
   constructor(
@@ -18,29 +17,6 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
     private readonly emailService: EmailService,
   ) {
     this.url = this.configService.get<string>('RABBITMQ_URL');
-    this.exchangeName = this.configService.get<string>(
-      'RABBITMQ_EXCHANGE_NAME',
-    );
-    this.exchangeType = this.configService.get<string>(
-      'RABBITMQ_EXCHANGE_TYPE',
-    );
-
-    this.queues = [
-      {
-        name: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL'),
-        routingKey: this.configService.get<string>(
-          'RABBITMQ_QUEUE_AUTH_EMAIL_KEY',
-        ),
-        durable: true,
-      },
-      {
-        name: this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS'),
-        routingKey: this.configService.get<string>(
-          'RABBITMQ_QUEUE_AUTH_SMS_KEY',
-        ),
-        durable: true,
-      },
-    ];
   }
 
   async onModuleInit() {
@@ -79,51 +55,53 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.channel = await this.connection.createChannel();
-      await this.channel.assertExchange(this.exchangeName, this.exchangeType, {
-        durable: true,
-      });
-      this.isChannelActive = true;
+      for (const ex of exchangeList) {
+        await this.connectExchange(ex);
 
-      for (const queue of this.queues) {
-        await this.channel.assertQueue(queue.name, { durable: true });
-        await this.channel.bindQueue(
-          queue.name,
-          this.exchangeName,
-          queue.routingKey,
-        );
+        if (!this.isChannelActive) {
+          this.isChannelActive = true;
+        }
 
-        this.channel.consume(
-          queue.name,
-          (message) => {
-            if (message) {
-              if (!this.isChannelActive) {
-                console.warn(
-                  'Mensagem recebida, mas o canal foi encerrado. Ignorando...',
-                );
-                return;
+        for (const queue of ex.queues) {
+          await this.channel.assertQueue(queue.name, {
+            durable: queue.durable,
+          });
+          await this.channel.bindQueue(queue.name, ex.name, queue.routingKey);
+
+          this.channel.consume(
+            queue.name,
+            (message) => {
+              if (message) {
+                if (!this.isChannelActive) {
+                  console.warn(
+                    'Mensagem recebida, mas o canal foi encerrado. Ignorando...',
+                  );
+                  return;
+                }
+
+                const content = JSON.parse(message.content.toString());
+
+                try {
+                  this.processMessage(queue.name, content);
+                  this.channel.ack(message);
+                } catch (error) {
+                  console.error(
+                    'Erro ao processar mensagem. Enviando NACK.',
+                    error.message,
+                  );
+                  this.channel.nack(message, false, false);
+                }
               }
+            },
+            {
+              noAck: false,
+              consumerTag: `consumer-${queue.name}`,
+            },
+          );
+        }
 
-              const content = JSON.parse(message.content.toString());
-
-              try {
-                this.processMessage(queue.name, content);
-                this.channel.ack(message);
-              } catch (error) {
-                console.error(
-                  'Erro ao processar mensagem. Enviando NACK.',
-                  error.message,
-                );
-                this.channel.nack(message, false, true);
-              }
-            }
-          },
-          {
-            noAck: false,
-            consumerTag: `consumer-${queue.name}`,
-          },
-        );
+        console.table(ex.queues);
       }
-      console.table(this.queues);
     } catch (error) {
       console.error(`Erro ao conectar ao RabbitMQ: ${error.message}`);
 
@@ -150,14 +128,32 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
     setTimeout(() => this.connectWithRetry(retryInterval), retryInterval);
   }
 
+  private async connectExchange(exchange: IExchange) {
+    try {
+      await this.channel.assertExchange(exchange.name, exchange.type, {
+        durable: exchange.durable,
+      });
+
+      console.info(`Conexão com Exchange "${exchange.name}" estabelecida.`);
+    } catch (error) {
+      console.error(
+        `Erro ao estabelecer conexão com a exchange "${exchange.name}": ${error.message}`,
+      );
+    }
+  }
+
   private async processMessage(queueName: string, message: any) {
-    if (
-      queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_EMAIL')
-    ) {
+    const queues = exchangeList.flatMap((exchange) => exchange.queues);
+    console.log(queues);
+
+    if (queueName === exRecoveryPassword.queues[0].name) {
       this.emailService.sendEmailToRecoveryPassword(message.content);
-    } else if (
-      queueName === this.configService.get<string>('RABBITMQ_QUEUE_AUTH_SMS')
-    ) {
+      console.log(queueName, message);
+    } else if (queueName === exRecoveryPassword.queues[1].name) {
+      console.log(queueName, message);
+    } else if (queueName === exUser.queues[0].name) {
+      console.log(queueName, message);
+    } else if (queueName === exUser.queues[1].name) {
       console.log(queueName, message);
     }
   }
